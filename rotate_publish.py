@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rotate 4+4 videos into GitHub Pages repo and regenerate index.html."""
+"""Upload videos in small batches until fully published."""
 
 from __future__ import annotations
 
@@ -69,28 +69,40 @@ def list_videos(dataset_key: str) -> list[tuple[str, int, Path]]:
 def pick_batch(items: list[tuple[str, int, Path]], start: int, size: int) -> tuple[list[tuple[str, int, Path]], int]:
     if not items:
         return [], 0
-    chosen: list[tuple[str, int, Path]] = []
     n = len(items)
-    idx = start % n
-    for _ in range(min(size, n)):
-        chosen.append(items[idx])
-        idx = (idx + 1) % n
-    return chosen, idx
+    idx = max(0, min(start, n))
+    end = min(idx + size, n)
+    return items[idx:end], end
 
 
-def refresh_assets(dataset_key: str, chosen: list[tuple[str, int, Path]]) -> list[tuple[str, int, str]]:
+def append_assets(dataset_key: str, chosen: list[tuple[str, int, Path]]) -> int:
     conf = DATASETS[dataset_key]
     asset_dir: Path = conf["asset_dir"]
     asset_dir.mkdir(parents=True, exist_ok=True)
-    for old in asset_dir.glob("*.mp4"):
-        old.unlink()
-    rel_items: list[tuple[str, int, str]] = []
+    added = 0
     for mid, pid, src in chosen:
         dst = asset_dir / src.name
-        shutil.copy2(src, dst)
-        rel = dst.relative_to(REPO_ROOT).as_posix()
-        rel_items.append((mid, pid, rel))
-    return rel_items
+        if not dst.exists():
+            shutil.copy2(src, dst)
+            added += 1
+    return added
+
+
+def collect_asset_items(dataset_key: str) -> list[tuple[str, int, str]]:
+    conf = DATASETS[dataset_key]
+    out: list[tuple[str, int, str]] = []
+    asset_dir: Path = conf["asset_dir"]
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    for p in sorted(asset_dir.iterdir(), key=lambda x: x.name):
+        if not p.is_file() or p.suffix.lower() != ".mp4":
+            continue
+        m = conf["pattern"].match(p.name)
+        if not m:
+            continue
+        mid, pid_s = m.group(1), m.group(2)
+        out.append((mid, int(pid_s), p.relative_to(REPO_ROOT).as_posix()))
+    out.sort(key=lambda x: (x[1], x[0], x[2]))
+    return out
 
 
 def group_by_id(items: list[tuple[str, int, str]]) -> dict[int, list[tuple[int, str]]]:
@@ -120,7 +132,7 @@ def build_dataset_section(dataset_key: str, label: str, grouped: dict[int, list[
             f'<section id="{dataset_key}-ID{gid}" class="group" style="--accent:{theme["accent"]};--group-bg:{theme["bg"]}">'
         )
         parts.append(f'<header class="group-header"><h2>ID {gid}</h2>')
-        parts.append(f'<span class="group-meta">{label} · 当前轮询批次</span></header>')
+        parts.append(f'<span class="group-meta">{label} · 已累计上传 {sum(len(v) for v in grouped.values())} 个</span></header>')
         parts.append('<div class="grid">')
         for pid, rel in grouped[gid]:
             prompt = html.escape(golden.get(str(pid), "（golden_set.json 中无此 id）"))
@@ -179,6 +191,7 @@ def main() -> None:
     parser.add_argument("--push", action="store_true", help="Push after commit (implies --commit).")
     parser.add_argument("--max-retries", type=int, default=0, help="Max git push retries; 0 means infinite.")
     parser.add_argument("--retry-wait", type=float, default=2.0, help="Initial seconds between retries.")
+    parser.add_argument("--until-done", action="store_true", help="Keep batching until all videos are uploaded.")
     args = parser.parse_args()
 
     if args.batch_size <= 0 or args.max_retries < 0 or args.retry_wait <= 0:
@@ -187,31 +200,47 @@ def main() -> None:
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     state = load_state()
 
-    sky_all = list_videos("skyreels")
-    veo_all = list_videos("veo3")
-    sky_batch, next_sky = pick_batch(sky_all, state["skyreels"], args.batch_size)
-    veo_batch, next_veo = pick_batch(veo_all, state["veo3"], args.batch_size)
+    round_idx = 0
+    while True:
+        round_idx += 1
+        sky_all = list_videos("skyreels")
+        veo_all = list_videos("veo3")
+        sky_batch, next_sky = pick_batch(sky_all, state["skyreels"], args.batch_size)
+        veo_batch, next_veo = pick_batch(veo_all, state["veo3"], args.batch_size)
 
-    sky_rel = refresh_assets("skyreels", sky_batch)
-    veo_rel = refresh_assets("veo3", veo_batch)
+        sky_added = append_assets("skyreels", sky_batch)
+        veo_added = append_assets("veo3", veo_batch)
+        state = {"skyreels": next_sky, "veo3": next_veo}
 
-    write_index(group_by_id(sky_rel), group_by_id(veo_rel), golden)
+        sky_items = collect_asset_items("skyreels")
+        veo_items = collect_asset_items("veo3")
+        write_index(group_by_id(sky_items), group_by_id(veo_items), golden)
 
-    print("Updated index.html and assets.")
-    print(f"skyreels: {len(sky_batch)} videos, next index: {next_sky}")
-    print(f"veo3: {len(veo_batch)} videos, next index: {next_veo}")
+        print(f"[Round {round_idx}] added skyreels={sky_added}, veo3={veo_added}")
+        print(f"[Round {round_idx}] progress skyreels={next_sky}/{len(sky_all)}, veo3={next_veo}/{len(veo_all)}")
 
-    if args.commit or args.push:
-        save_state({"skyreels": next_sky, "veo3": next_veo})
-        run_git("add", "index.html", "assets", ".upload_state.json", "rotate_publish.py")
-        msg = f"Rotate video batch: skyreels={len(sky_batch)}, veo3={len(veo_batch)}"
-        run_git("commit", "-m", msg)
-        print("Committed.")
-    if args.push:
-        git_push_with_retry(args.max_retries, args.retry_wait)
-        print("Pushed.")
-    if not (args.commit or args.push):
-        save_state({"skyreels": next_sky, "veo3": next_veo})
+        changed = sky_added > 0 or veo_added > 0
+        if args.commit or args.push:
+            save_state(state)
+            run_git("add", "index.html", "assets", ".upload_state.json", "rotate_publish.py")
+            if changed:
+                msg = f"Upload batch: skyreels+{sky_added}, veo3+{veo_added}"
+                run_git("commit", "-m", msg)
+                print("Committed.")
+            else:
+                print("No new files to commit.")
+        else:
+            save_state(state)
+
+        if args.push and changed:
+            git_push_with_retry(args.max_retries, args.retry_wait)
+            print("Pushed.")
+
+        done = next_sky >= len(sky_all) and next_veo >= len(veo_all)
+        if not args.until_done or done:
+            if done:
+                print("All videos have been uploaded.")
+            break
 
 
 HTML_HEAD = """<!DOCTYPE html>
