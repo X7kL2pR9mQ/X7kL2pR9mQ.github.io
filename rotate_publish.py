@@ -43,12 +43,21 @@ GROUP_THEME = {
 def load_state() -> dict[str, int]:
     if not STATE_FILE.exists():
         return {"skyreels": 0, "veo3": 0}
-    data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    return {"skyreels": int(data.get("skyreels", 0)), "veo3": int(data.get("veo3", 0))}
+    try:
+        raw = STATE_FILE.read_text(encoding="utf-8").strip()
+        if not raw:
+            return {"skyreels": 0, "veo3": 0}
+        data = json.loads(raw)
+        return {"skyreels": int(data.get("skyreels", 0)), "veo3": int(data.get("veo3", 0))}
+    except Exception:
+        # Corrupted/partial state file should not block uploading.
+        return {"skyreels": 0, "veo3": 0}
 
 
 def save_state(state: dict[str, int]) -> None:
-    STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(STATE_FILE)
 
 
 def list_videos(dataset_key: str) -> list[tuple[str, int, Path]]:
@@ -75,17 +84,38 @@ def pick_batch(items: list[tuple[str, int, Path]], start: int, size: int) -> tup
     return items[idx:end], end
 
 
-def append_assets(dataset_key: str, chosen: list[tuple[str, int, Path]]) -> int:
+def append_assets(dataset_key: str, chosen: list[tuple[str, int, Path]], remote_assets: set[str]) -> tuple[int, int]:
     conf = DATASETS[dataset_key]
     asset_dir: Path = conf["asset_dir"]
     asset_dir.mkdir(parents=True, exist_ok=True)
     added = 0
+    skipped_remote = 0
     for mid, pid, src in chosen:
         dst = asset_dir / src.name
+        rel = dst.relative_to(REPO_ROOT).as_posix()
+        if rel in remote_assets:
+            skipped_remote += 1
+            continue
         if not dst.exists():
             shutil.copy2(src, dst)
             added += 1
-    return added
+    return added, skipped_remote
+
+
+def get_remote_asset_set() -> set[str]:
+    try:
+        out = subprocess.check_output(
+            ["git", "ls-tree", "-r", "--name-only", "origin/main"],
+            cwd=REPO_ROOT,
+            text=True,
+        )
+    except Exception:
+        return set()
+    return {
+        line.strip()
+        for line in out.splitlines()
+        if line.startswith("assets/") and line.endswith(".mp4")
+    }
 
 
 def collect_asset_items(dataset_key: str) -> list[tuple[str, int, str]]:
@@ -203,20 +233,25 @@ def main() -> None:
     round_idx = 0
     while True:
         round_idx += 1
+        run_git("fetch", "origin", "main")
+        remote_assets = get_remote_asset_set()
         sky_all = list_videos("skyreels")
         veo_all = list_videos("veo3")
         sky_batch, next_sky = pick_batch(sky_all, state["skyreels"], args.batch_size)
         veo_batch, next_veo = pick_batch(veo_all, state["veo3"], args.batch_size)
 
-        sky_added = append_assets("skyreels", sky_batch)
-        veo_added = append_assets("veo3", veo_batch)
+        sky_added, sky_skipped = append_assets("skyreels", sky_batch, remote_assets)
+        veo_added, veo_skipped = append_assets("veo3", veo_batch, remote_assets)
         state = {"skyreels": next_sky, "veo3": next_veo}
 
         sky_items = collect_asset_items("skyreels")
         veo_items = collect_asset_items("veo3")
         write_index(group_by_id(sky_items), group_by_id(veo_items), golden)
 
-        print(f"[Round {round_idx}] added skyreels={sky_added}, veo3={veo_added}")
+        print(
+            f"[Round {round_idx}] added skyreels={sky_added}, veo3={veo_added}; "
+            f"skipped(remote) skyreels={sky_skipped}, veo3={veo_skipped}"
+        )
         print(f"[Round {round_idx}] progress skyreels={next_sky}/{len(sky_all)}, veo3={next_veo}/{len(veo_all)}")
 
         changed = sky_added > 0 or veo_added > 0
