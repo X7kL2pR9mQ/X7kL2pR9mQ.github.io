@@ -1,62 +1,42 @@
 <!DOCTYPE html>
 <html lang="zh-Hans">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Human Likeness Video Gallery</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video Gallery</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #f6f7fb; color: #1f2937; }
-    .wrap { max-width: 1400px; margin: 0 auto; padding: 20px; }
-    .bar { display: flex; gap: 10px; align-items: center; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; margin-bottom: 16px; }
-    select { padding: 6px 10px; border-radius: 8px; border: 1px solid #d1d5db; }
-    .dataset { display: none; }
-    .dataset.active { display: block; }
-    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
-    video { width: 100%; aspect-ratio: 16 / 9; background: #111827; display: block; }
-    .meta { padding: 10px; }
-    .id { font-weight: 700; font-size: 12px; color: #2563eb; margin-bottom: 6px; }
-    .prompt { font-size: 13px; margin: 0; line-height: 1.45; }
-    @media (max-width: 1100px) { .grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+    :root { --page:#f6f7f9; --surface:#fff; --text:#1a1d24; --muted:#5c6577; --border:#e2e6ee; --radius:12px; --shadow:0 4px 24px rgba(15,23,42,.06); }
+    * { box-sizing:border-box; } body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--page); color:var(--text); line-height:1.55; font-size:15px; }
+    .shell { max-width:1600px; margin:0 auto; padding:28px 20px 64px; }
+    .source-switch { margin-bottom:18px; display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px 14px; box-shadow:var(--shadow); }
+    .source-switch label { color:var(--muted); font-weight:600; } .source-switch select { border:1px solid var(--border); border-radius:8px; padding:6px 10px; background:#fff; font-size:14px; }
+    .dataset { display:none; } .dataset.is-active { display:block; }
+    .toc { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:24px; padding:16px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); }
+    .toc-link { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:999px; text-decoration:none; color:var(--text); font-weight:600; font-size:.9rem; border:1px solid var(--border); background:#fafbfc; }
+    .toc-link .count { color:var(--muted); font-weight:500; font-size:.85rem; }
+    .group { margin-bottom:40px; padding:24px; border-radius:16px; background:var(--group-bg); border:1px solid color-mix(in srgb,var(--accent) 22%,var(--border)); }
+    .group-header { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+    .group-header h2 { margin:0; font-size:1.25rem; font-weight:700; color:var(--accent); } .group-meta { color:var(--muted); font-size:.9rem; }
+    .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:18px; } @media (max-width:1200px){.grid{grid-template-columns:repeat(2,1fr)}} @media (max-width:560px){.grid{grid-template-columns:1fr}}
+    .card { background:var(--surface); border-radius:var(--radius); overflow:hidden; border:1px solid var(--border); box-shadow:var(--shadow); display:flex; flex-direction:column; }
+    .video-wrap { aspect-ratio:16/9; background:#0f1218; } .video-wrap video { width:100%; height:100%; object-fit:contain; display:block; }
+    .meta { padding:12px 14px 14px; display:flex; flex-direction:column; gap:8px; } .badge { align-self:flex-start; font-size:.75rem; font-weight:700; padding:4px 10px; border-radius:6px; background:color-mix(in srgb,var(--accent) 15%,#fff); color:var(--accent); }
+    .prompt { margin:0; font-size:.88rem; color:var(--text); line-height:1.5; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="bar">
-      <label for="source">数据源：</label>
-      <select id="source">
-        <option value="skyreels">SkyReels V3</option>
-        <option value="veo3">veo3-1fast</option>
-      </select>
-    </div>
-
-    <section id="skyreels" class="dataset active">
-      <div class="grid">
-        <article class="card"><video controls src="assets/skyreels/M9000__prompt0__5s.mp4"></video><div class="meta"><div class="id">ID 0 · prompt 0</div><p class="prompt">Close-up (Head and shoulders). Squinting at the monitor in confusion, then raising both eyebrows in sudden realization.</p></div></article>
-        <article class="card"><video controls src="assets/skyreels/M9001__prompt1__5s.mp4"></video><div class="meta"><div class="id">ID 1 · prompt 1</div><p class="prompt">Medium shot (Head to waist). Sitting in an office chair, turning from facing front to a clear side profile, pausing briefly, then turning back to face front.</p></div></article>
-        <article class="card"><video controls src="assets/skyreels/M9002__prompt2__5s.mp4"></video><div class="meta"><div class="id">ID 2 · prompt 2</div><p class="prompt">Medium close-up (Head to chest). Both elbows rest on the desk. Raise both hands and clasp them tightly in front of the mouth for a moment, so the hands partly cover the lower face.</p></div></article>
-        <article class="card"><video controls src="assets/skyreels/M9003__prompt3__5s.mp4"></video><div class="meta"><div class="id">ID 3 · prompt 3</div><p class="prompt">Medium shot (Head to waist). Taking off glasses, wiping them with the shirt hem, then putting them back on.</p></div></article>
-      </div>
-    </section>
-
-    <section id="veo3" class="dataset">
-      <div class="grid">
-        <article class="card"><video controls src="assets/veo3/M9001__multiref__prompt0__8s.mp4"></video><div class="meta"><div class="id">ID 1 · prompt 0</div><p class="prompt">Close-up (Head and shoulders). Squinting at the monitor in confusion, then raising both eyebrows in sudden realization.</p></div></article>
-        <article class="card"><video controls src="assets/veo3/M9000__multiref__prompt2__8s.mp4"></video><div class="meta"><div class="id">ID 0 · prompt 2</div><p class="prompt">Medium close-up (Head to chest). Both elbows rest on the desk. Raise both hands and clasp them tightly in front of the mouth for a moment, so the hands partly cover the lower face.</p></div></article>
-        <article class="card"><video controls src="assets/veo3/M9000__multiref__prompt3__8s.mp4"></video><div class="meta"><div class="id">ID 0 · prompt 3</div><p class="prompt">Medium shot (Head to waist). Taking off glasses, wiping them with the shirt hem, then putting them back on.</p></div></article>
-        <article class="card"><video controls src="assets/veo3/M9000__multiref__prompt4__8s.mp4"></video><div class="meta"><div class="id">ID 0 · prompt 4</div><p class="prompt">Full body. Pushing strongly away from the desk so the chair rolls backward, then steadying the body without standing up.</p></div></article>
-      </div>
-    </section>
+  <div class="shell">
+<div class="source-switch"><label for="sourceSelect">数据源</label><select id="sourceSelect" aria-label="选择数据源"><option value="skyreels" selected>SkyReels V3</option><option value="veo3">veo3-1fast</option></select></div><section class="dataset is-active" data-dataset="skyreels"><nav class="toc" aria-label="分组跳转"><a class="toc-link" href="#skyreels-ID0" style="--accent:#0d9488">ID 0 <span class="count">(1)</span></a><a class="toc-link" href="#skyreels-ID1" style="--accent:#2563eb">ID 1 <span class="count">(1)</span></a><a class="toc-link" href="#skyreels-ID2" style="--accent:#7c3aed">ID 2 <span class="count">(1)</span></a><a class="toc-link" href="#skyreels-ID3" style="--accent:#d97706">ID 3 <span class="count">(1)</span></a></nav><section id="skyreels-ID0" class="group" style="--accent:#0d9488;--group-bg:rgba(13, 148, 136, 0.08)"><header class="group-header"><h2>ID 0</h2><span class="group-meta">SkyReels V3 · 当前轮询批次</span></header><div class="grid"><article class="card"><div class="video-wrap"><video controls preload="metadata" playsinline src="assets/skyreels/M9000__prompt1__5s.mp4"></video></div><div class="meta"><span class="badge">prompt 1</span><p class="prompt">Medium shot (Head to waist). Sitting in an office chair, turning from facing front to a clear side profile, pausing briefly, then turning back to face front.</p></div></article></div></section><section id="skyreels-ID1" class="group" style="--accent:#2563eb;--group-bg:rgba(37, 99, 235, 0.08)"><header class="group-header"><h2>ID 1</h2><span class="group-meta">SkyReels V3 · 当前轮询批次</span></header><div class="grid"><article class="card"><div class="video-wrap"><video controls preload="metadata" playsinline src="assets/skyreels/M9001__prompt1__5s.mp4"></video></div><div class="meta"><span class="badge">prompt 1</span><p class="prompt">Medium shot (Head to waist). Sitting in an office chair, turning from facing front to a clear side profile, pausing briefly, then turning back to face front.</p></div></article></div></section><section id="skyreels-ID2" class="group" style="--accent:#7c3aed;--group-bg:rgba(124, 58, 237, 0.08)"><header class="group-header"><h2>ID 2</h2><span class="group-meta">SkyReels V3 · 当前轮询批次</span></header><div class="grid"><article class="card"><div class="video-wrap"><video controls preload="metadata" playsinline src="assets/skyreels/M9002__prompt1__5s.mp4"></video></div><div class="meta"><span class="badge">prompt 1</span><p class="prompt">Medium shot (Head to waist). Sitting in an office chair, turning from facing front to a clear side profile, pausing briefly, then turning back to face front.</p></div></article></div></section><section id="skyreels-ID3" class="group" style="--accent:#d97706;--group-bg:rgba(217, 119, 6, 0.1)"><header class="group-header"><h2>ID 3</h2><span class="group-meta">SkyReels V3 · 当前轮询批次</span></header><div class="grid"><article class="card"><div class="video-wrap"><video controls preload="metadata" playsinline src="assets/skyreels/M9003__prompt1__5s.mp4"></video></div><div class="meta"><span class="badge">prompt 1</span><p class="prompt">Medium shot (Head to waist). Sitting in an office chair, turning from facing front to a clear side profile, pausing briefly, then turning back to face front.</p></div></article></div></section></section><section class="dataset" data-dataset="veo3"><nav class="toc" aria-label="分组跳转"><a class="toc-link" href="#veo3-ID0" style="--accent:#0d9488">ID 0 <span class="count">(2)</span></a><a class="toc-link" href="#veo3-ID1" style="--accent:#2563eb">ID 1 <span class="count">(2)</span></a><a class="toc-link" href="#veo3-ID2" style="--accent:#7c3aed">ID 2 <span class="count">(0)</span></a><a class="toc-link" href="#veo3-ID3" style="--accent:#d97706">ID 3 <span class="count">(0)</span></a></nav><section id="veo3-ID0" class="group" style="--accent:#0d9488;--group-bg:rgba(13, 148, 136, 0.08)"><header class="group-header"><h2>ID 0</h2><span class="group-meta">veo3-1fast · 当前轮询批次</span></header><div class="grid"><article class="card"><div class="video-wrap"><video controls preload="metadata" playsinline src="assets/veo3/M9000__multiref__prompt4__8s.mp4"></video></div><div class="meta"><span class="badge">prompt 4</span><p class="prompt">Full body. Pushing strongly away from the desk so the chair rolls backward, then steadying the body without standing up.</p></div></article><article class="card"><div class="video-wrap"><video controls preload="metadata" playsinline src="assets/veo3/M9000__multiref__prompt5__8s.mp4"></video></div><div class="meta"><span class="badge">prompt 5</span><p class="prompt">Full body. Standing at a desk and typing while the camera slowly moves around, showing the face and body from different views.</p></div></article></div></section><section id="veo3-ID1" class="group" style="--accent:#2563eb;--group-bg:rgba(37, 99, 235, 0.08)"><header class="group-header"><h2>ID 1</h2><span class="group-meta">veo3-1fast · 当前轮询批次</span></header><div class="grid"><article class="card"><div class="video-wrap"><video controls preload="metadata" playsinline src="assets/veo3/M9001__multiref__prompt3__8s.mp4"></video></div><div class="meta"><span class="badge">prompt 3</span><p class="prompt">Medium shot (Head to waist). Taking off glasses, wiping them with the shirt hem, then putting them back on.</p></div></article><article class="card"><div class="video-wrap"><video controls preload="metadata" playsinline src="assets/veo3/M9001__multiref__prompt5__8s.mp4"></video></div><div class="meta"><span class="badge">prompt 5</span><p class="prompt">Full body. Standing at a desk and typing while the camera slowly moves around, showing the face and body from different views.</p></div></article></div></section><section id="veo3-ID2" class="group" style="--accent:#7c3aed;--group-bg:rgba(124, 58, 237, 0.08)"><header class="group-header"><h2>ID 2</h2><span class="group-meta">veo3-1fast · 当前轮询批次</span></header><div class="grid"></div></section><section id="veo3-ID3" class="group" style="--accent:#d97706;--group-bg:rgba(217, 119, 6, 0.1)"><header class="group-header"><h2>ID 3</h2><span class="group-meta">veo3-1fast · 当前轮询批次</span></header><div class="grid"></div></section></section>
   </div>
-
   <script>
-    const select = document.getElementById('source');
-    const sections = document.querySelectorAll('.dataset');
-    select.addEventListener('change', () => {
-      sections.forEach(s => s.classList.remove('active'));
-      document.getElementById(select.value).classList.add('active');
-    });
+    const select = document.getElementById("sourceSelect");
+    const datasets = document.querySelectorAll(".dataset");
+    function switchDataset(key) {
+      datasets.forEach((el) => el.classList.toggle("is-active", el.dataset.dataset === key));
+      location.hash = "";
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    select.addEventListener("change", (e) => switchDataset(e.target.value));
   </script>
 </body>
 </html>
