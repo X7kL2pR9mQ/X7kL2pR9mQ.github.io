@@ -9,6 +9,7 @@ import json
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -151,15 +152,37 @@ def run_git(*args: str) -> None:
     subprocess.run(["git", *args], cwd=REPO_ROOT, check=True)
 
 
+def git_push_with_retry(max_retries: int, retry_wait: float) -> None:
+    last_err: Exception | None = None
+    i = 0
+    while max_retries == 0 or i < max_retries:
+        try:
+            run_git("push", "-u", "origin", "main")
+            return
+        except Exception as err:  # pragma: no cover - runtime/network path
+            last_err = err
+            i += 1
+            if max_retries != 0 and i >= max_retries:
+                break
+            backoff_idx = min(i - 1, 10)
+            wait_s = retry_wait * (2**backoff_idx)
+            total_text = "infinite" if max_retries == 0 else str(max_retries)
+            print(f"Push failed (attempt {i}/{total_text}), retry in {wait_s:.1f}s...")
+            time.sleep(wait_s)
+    raise RuntimeError("git push failed after retries") from last_err
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch-size", type=int, default=4, help="Each dataset batch size, default 4.")
     parser.add_argument("--commit", action="store_true", help="Commit generated changes.")
     parser.add_argument("--push", action="store_true", help="Push after commit (implies --commit).")
+    parser.add_argument("--max-retries", type=int, default=0, help="Max git push retries; 0 means infinite.")
+    parser.add_argument("--retry-wait", type=float, default=2.0, help="Initial seconds between retries.")
     args = parser.parse_args()
 
-    if args.batch_size <= 0:
-        raise SystemExit("batch-size must be > 0")
+    if args.batch_size <= 0 or args.max_retries < 0 or args.retry_wait <= 0:
+        raise SystemExit("batch-size>0, max-retries>=0, retry-wait>0")
 
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     state = load_state()
@@ -173,20 +196,22 @@ def main() -> None:
     veo_rel = refresh_assets("veo3", veo_batch)
 
     write_index(group_by_id(sky_rel), group_by_id(veo_rel), golden)
-    save_state({"skyreels": next_sky, "veo3": next_veo})
 
     print("Updated index.html and assets.")
     print(f"skyreels: {len(sky_batch)} videos, next index: {next_sky}")
     print(f"veo3: {len(veo_batch)} videos, next index: {next_veo}")
 
     if args.commit or args.push:
+        save_state({"skyreels": next_sky, "veo3": next_veo})
         run_git("add", "index.html", "assets", ".upload_state.json", "rotate_publish.py")
         msg = f"Rotate video batch: skyreels={len(sky_batch)}, veo3={len(veo_batch)}"
         run_git("commit", "-m", msg)
         print("Committed.")
     if args.push:
-        run_git("push", "-u", "origin", "main")
+        git_push_with_retry(args.max_retries, args.retry_wait)
         print("Pushed.")
+    if not (args.commit or args.push):
+        save_state({"skyreels": next_sky, "veo3": next_veo})
 
 
 HTML_HEAD = """<!DOCTYPE html>
