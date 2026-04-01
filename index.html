@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Human Likeness Video Gallery</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #f6f7fb; color: #1f2937; }
+    .wrap { max-width: 1400px; margin: 0 auto; padding: 20px; }
+    .bar { display: flex; gap: 10px; align-items: center; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; margin-bottom: 16px; }
+    select { padding: 6px 10px; border-radius: 8px; border: 1px solid #d1d5db; }
+    .dataset { display: none; }
+    .dataset.active { display: block; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+    video { width: 100%; aspect-ratio: 16 / 9; background: #111827; display: block; }
+    .meta { padding: 10px; }
+    .id { font-weight: 700; font-size: 12px; color: #2563eb; margin-bottom: 6px; }
+    .prompt { font-size: 13px; margin: 0; line-height: 1.45; }
+    @media (max-width: 1100px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="bar">
+      <label for="source">数据源：</label>
+      <select id="source">
+        <option value="skyreels">SkyReels V3</option>
+        <option value="veo3">veo3-1fast</option>
+      </select>
+    </div>
+
+    <section id="skyreels" class="dataset active">
+      <div class="grid">
+        <article class="card"><video controls src="assets/skyreels/M9000__prompt0__5s.mp4"></video><div class="meta"><div class="id">ID 0 · prompt 0</div><p class="prompt">Close-up (Head and shoulders). Squinting at the monitor in confusion, then raising both eyebrows in sudden realization.</p></div></article>
+        <article class="card"><video controls src="assets/skyreels/M9001__prompt1__5s.mp4"></video><div class="meta"><div class="id">ID 1 · prompt 1</div><p class="prompt">Medium shot (Head to waist). Sitting in an office chair, turning from facing front to a clear side profile, pausing briefly, then turning back to face front.</p></div></article>
+        <article class="card"><video controls src="assets/skyreels/M9002__prompt2__5s.mp4"></video><div class="meta"><div class="id">ID 2 · prompt 2</div><p class="prompt">Medium close-up (Head to chest). Both elbows rest on the desk. Raise both hands and clasp them tightly in front of the mouth for a moment, so the hands partly cover the lower face.</p></div></article>
+        <article class="card"><video controls src="assets/skyreels/M9003__prompt3__5s.mp4"></video><div class="meta"><div class="id">ID 3 · prompt 3</div><p class="prompt">Medium shot (Head to waist). Taking off glasses, wiping them with the shirt hem, then putting them back on.</p></div></article>
+      </div>
+    </section>
+
+    <section id="veo3" class="dataset">
+      <div class="grid">
+        <article class="card"><video controls src="assets/veo3/M9001__multiref__prompt0__8s.mp4"></video><div class="meta"><div class="id">ID 1 · prompt 0</div><p class="prompt">Close-up (Head and shoulders). Squinting at the monitor in confusion, then raising both eyebrows in sudden realization.</p></div></article>
+        <article class="card"><video controls src="assets/veo3/M9000__multiref__prompt2__8s.mp4"></video><div class="meta"><div class="id">ID 0 · prompt 2</div><p class="prompt">Medium close-up (Head to chest). Both elbows rest on the desk. Raise both hands and clasp them tightly in front of the mouth for a moment, so the hands partly cover the lower face.</p></div></article>
+        <article class="card"><video controls src="assets/veo3/M9000__multiref__prompt3__8s.mp4"></video><div class="meta"><div class="id">ID 0 · prompt 3</div><p class="prompt">Medium shot (Head to waist). Taking off glasses, wiping them with the shirt hem, then putting them back on.</p></div></article>
+        <article class="card"><video controls src="assets/veo3/M9000__multiref__prompt4__8s.mp4"></video><div class="meta"><div class="id">ID 0 · prompt 4</div><p class="prompt">Full body. Pushing strongly away from the desk so the chair rolls backward, then steadying the body without standing up.</p></div></article>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const select = document.getElementById('source');
+    const sections = document.querySelectorAll('.dataset');
+    select.addEventListener('change', () => {
+      sections.forEach(s => s.classList.remove('active'));
+      document.getElementById(select.value).classList.add('active');
+    });
+  </script>
+</body>
+</html>
