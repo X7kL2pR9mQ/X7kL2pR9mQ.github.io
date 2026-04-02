@@ -15,12 +15,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = REPO_ROOT.parent
 STATE_FILE = REPO_ROOT / ".upload_state.json"
-GOLDEN_PATH = PROJECT_ROOT / "golden_set.json"
+GOLDEN_PATH = PROJECT_ROOT / "golden_set_0401.json"
 
 DATASETS = {
     "skyreels": {
         "label": "SkyReels V3",
-        "source_dir": PROJECT_ROOT / "skyreels_golden" / "videos_3ref_step8_5s_guide2_0331prompt",
+        "source_dir": PROJECT_ROOT / "skyreels_golden" / "videos_1ref_step8_5s_guide2_0401prompt",
         "asset_dir": REPO_ROOT / "assets" / "skyreels",
         "pattern": re.compile(r"^(M900[0-3])__prompt(\d+)__5s\.mp4$"),
     },
@@ -92,7 +92,13 @@ def pick_batch(items: list[tuple[str, int, Path]], start: int, size: int) -> tup
     return items[idx:end], end
 
 
-def append_assets(dataset_key: str, chosen: list[tuple[str, int, Path]], remote_assets: set[str]) -> tuple[int, int]:
+def append_assets(
+    dataset_key: str,
+    chosen: list[tuple[str, int, Path]],
+    remote_assets: set[str],
+    *,
+    ignore_remote_skip: bool = False,
+) -> tuple[int, int]:
     conf = DATASETS[dataset_key]
     asset_dir: Path = conf["asset_dir"]
     asset_dir.mkdir(parents=True, exist_ok=True)
@@ -101,12 +107,11 @@ def append_assets(dataset_key: str, chosen: list[tuple[str, int, Path]], remote_
     for mid, pid, src in chosen:
         dst = asset_dir / src.name
         rel = dst.relative_to(REPO_ROOT).as_posix()
-        if rel in remote_assets:
+        if not ignore_remote_skip and rel in remote_assets:
             skipped_remote += 1
             continue
-        if not dst.exists():
-            shutil.copy2(src, dst)
-            added += 1
+        shutil.copy2(src, dst)
+        added += 1
     return added, skipped_remote
 
 
@@ -173,7 +178,7 @@ def build_dataset_section(dataset_key: str, label: str, grouped: dict[int, list[
         parts.append(f'<span class="group-meta">{label} · 已累计上传 {sum(len(v) for v in grouped.values())} 个</span></header>')
         parts.append('<div class="grid">')
         for pid, rel in grouped[gid]:
-            prompt = html.escape(golden.get(str(pid), "（golden_set.json 中无此 id）"))
+            prompt = html.escape(golden.get(str(pid), "（golden_set_0401.json 中无此 id）"))
             parts.append('<article class="card">')
             parts.append(
                 f'<div class="video-wrap"><video controls preload="none" playsinline data-src="{html.escape(rel)}"></video></div>'
@@ -272,6 +277,11 @@ def main() -> None:
         action="store_true",
         help="Only rewrite index.html from current assets (no upload state change).",
     )
+    parser.add_argument(
+        "--ignore-remote-skip",
+        action="store_true",
+        help="Copy even when origin/main already has the asset path (for replacing same-named files).",
+    )
     args = parser.parse_args()
 
     if args.batch_size <= 0 or args.max_retries < 0 or args.retry_wait <= 0:
@@ -303,9 +313,15 @@ def main() -> None:
         veo_batch, next_veo = pick_batch(veo_all, state["veo3"], args.batch_size)
         wan_batch, next_wan = pick_batch(wan_all, state["wan26"], args.batch_size)
 
-        sky_added, sky_skipped = append_assets("skyreels", sky_batch, remote_assets)
-        veo_added, veo_skipped = append_assets("veo3", veo_batch, remote_assets)
-        wan_added, wan_skipped = append_assets("wan26", wan_batch, remote_assets)
+        sky_added, sky_skipped = append_assets(
+            "skyreels", sky_batch, remote_assets, ignore_remote_skip=args.ignore_remote_skip
+        )
+        veo_added, veo_skipped = append_assets(
+            "veo3", veo_batch, remote_assets, ignore_remote_skip=args.ignore_remote_skip
+        )
+        wan_added, wan_skipped = append_assets(
+            "wan26", wan_batch, remote_assets, ignore_remote_skip=args.ignore_remote_skip
+        )
         state = {"skyreels": next_sky, "veo3": next_veo, "wan26": next_wan}
 
         grouped = {
