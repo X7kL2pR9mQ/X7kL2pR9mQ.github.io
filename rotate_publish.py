@@ -30,6 +30,12 @@ DATASETS = {
         "asset_dir": REPO_ROOT / "assets" / "veo3",
         "pattern": re.compile(r"^(M900[0-3])__multiref__prompt(\d+)__8s\.mp4$"),
     },
+    "wan26": {
+        "label": "Wan 2.6",
+        "source_dir": PROJECT_ROOT / "wan2-6_golden",
+        "asset_dir": REPO_ROOT / "assets" / "wan26",
+        "pattern": re.compile(r"^(M900[0-3])__prompt(\d+)__5s\.mp4$"),
+    },
 }
 
 GROUP_THEME = {
@@ -40,18 +46,20 @@ GROUP_THEME = {
 }
 
 
+DEFAULT_STATE = {"skyreels": 0, "veo3": 0, "wan26": 0}
+
+
 def load_state() -> dict[str, int]:
     if not STATE_FILE.exists():
-        return {"skyreels": 0, "veo3": 0}
+        return dict(DEFAULT_STATE)
     try:
         raw = STATE_FILE.read_text(encoding="utf-8").strip()
         if not raw:
-            return {"skyreels": 0, "veo3": 0}
+            return dict(DEFAULT_STATE)
         data = json.loads(raw)
-        return {"skyreels": int(data.get("skyreels", 0)), "veo3": int(data.get("veo3", 0))}
+        return {k: int(data.get(k, 0)) for k in DEFAULT_STATE}
     except Exception:
-        # Corrupted/partial state file should not block uploading.
-        return {"skyreels": 0, "veo3": 0}
+        return dict(DEFAULT_STATE)
 
 
 def save_state(state: dict[str, int]) -> None:
@@ -175,17 +183,21 @@ def build_dataset_section(dataset_key: str, label: str, grouped: dict[int, list[
     return "".join(parts)
 
 
-def write_index(sky_grouped: dict[int, list[tuple[int, str]]], veo_grouped: dict[int, list[tuple[int, str]]], golden: dict[str, str]) -> None:
+def write_index(
+    grouped: dict[str, dict[int, list[tuple[int, str]]]],
+    golden: dict[str, str],
+) -> None:
     html_out = [HTML_HEAD]
     html_out.append(
         '<div class="source-switch"><label for="sourceSelect">数据源</label>'
         '<select id="sourceSelect" aria-label="选择数据源">'
         '<option value="skyreels" selected>SkyReels V3</option>'
         '<option value="veo3">veo3-1fast</option>'
+        '<option value="wan26">Wan 2.6</option>'
         "</select></div>"
     )
-    html_out.append(build_dataset_section("skyreels", "SkyReels V3", sky_grouped, golden))
-    html_out.append(build_dataset_section("veo3", "veo3-1fast", veo_grouped, golden))
+    for key in ("skyreels", "veo3", "wan26"):
+        html_out.append(build_dataset_section(key, DATASETS[key]["label"], grouped[key], golden))
     html_out.append(HTML_TAIL)
     (REPO_ROOT / "index.html").write_text("".join(html_out), encoding="utf-8")
 
@@ -237,29 +249,38 @@ def main() -> None:
         remote_assets = get_remote_asset_set()
         sky_all = list_videos("skyreels")
         veo_all = list_videos("veo3")
+        wan_all = list_videos("wan26")
         sky_batch, next_sky = pick_batch(sky_all, state["skyreels"], args.batch_size)
         veo_batch, next_veo = pick_batch(veo_all, state["veo3"], args.batch_size)
+        wan_batch, next_wan = pick_batch(wan_all, state["wan26"], args.batch_size)
 
         sky_added, sky_skipped = append_assets("skyreels", sky_batch, remote_assets)
         veo_added, veo_skipped = append_assets("veo3", veo_batch, remote_assets)
-        state = {"skyreels": next_sky, "veo3": next_veo}
+        wan_added, wan_skipped = append_assets("wan26", wan_batch, remote_assets)
+        state = {"skyreels": next_sky, "veo3": next_veo, "wan26": next_wan}
 
-        sky_items = collect_asset_items("skyreels")
-        veo_items = collect_asset_items("veo3")
-        write_index(group_by_id(sky_items), group_by_id(veo_items), golden)
+        grouped = {
+            "skyreels": group_by_id(collect_asset_items("skyreels")),
+            "veo3": group_by_id(collect_asset_items("veo3")),
+            "wan26": group_by_id(collect_asset_items("wan26")),
+        }
+        write_index(grouped, golden)
 
         print(
-            f"[Round {round_idx}] added skyreels={sky_added}, veo3={veo_added}; "
-            f"skipped(remote) skyreels={sky_skipped}, veo3={veo_skipped}"
+            f"[Round {round_idx}] added skyreels={sky_added}, veo3={veo_added}, wan26={wan_added}; "
+            f"skipped(remote) skyreels={sky_skipped}, veo3={veo_skipped}, wan26={wan_skipped}"
         )
-        print(f"[Round {round_idx}] progress skyreels={next_sky}/{len(sky_all)}, veo3={next_veo}/{len(veo_all)}")
+        print(
+            f"[Round {round_idx}] progress skyreels={next_sky}/{len(sky_all)}, "
+            f"veo3={next_veo}/{len(veo_all)}, wan26={next_wan}/{len(wan_all)}"
+        )
 
-        changed = sky_added > 0 or veo_added > 0
+        changed = sky_added > 0 or veo_added > 0 or wan_added > 0
         if args.commit or args.push:
             save_state(state)
             run_git("add", "index.html", "assets", ".upload_state.json", "rotate_publish.py")
             if changed:
-                msg = f"Upload batch: skyreels+{sky_added}, veo3+{veo_added}"
+                msg = f"Upload batch: skyreels+{sky_added}, veo3+{veo_added}, wan26+{wan_added}"
                 run_git("commit", "-m", msg)
                 print("Committed.")
             else:
@@ -271,7 +292,11 @@ def main() -> None:
             git_push_with_retry(args.max_retries, args.retry_wait)
             print("Pushed.")
 
-        done = next_sky >= len(sky_all) and next_veo >= len(veo_all)
+        done = (
+            next_sky >= len(sky_all)
+            and next_veo >= len(veo_all)
+            and next_wan >= len(wan_all)
+        )
         if not args.until_done or done:
             if done:
                 print("All videos have been uploaded.")
