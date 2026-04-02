@@ -208,23 +208,54 @@ def run_git(*args: str) -> None:
     subprocess.run(["git", *args], cwd=REPO_ROOT, check=True)
 
 
+def _push_output() -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "push", "-u", "origin", "main"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+
 def git_push_with_retry(max_retries: int, retry_wait: float) -> None:
     last_err: Exception | None = None
     i = 0
+    rebase_attempts = 0
+    max_rebase = 8
     while max_retries == 0 or i < max_retries:
-        try:
-            run_git("push", "-u", "origin", "main")
+        r = _push_output()
+        if r.returncode == 0:
             return
-        except Exception as err:  # pragma: no cover - runtime/network path
-            last_err = err
-            i += 1
-            if max_retries != 0 and i >= max_retries:
-                break
-            backoff_idx = min(i - 1, 10)
-            wait_s = retry_wait * (2**backoff_idx)
-            total_text = "infinite" if max_retries == 0 else str(max_retries)
-            print(f"Push failed (attempt {i}/{total_text}), retry in {wait_s:.1f}s...")
-            time.sleep(wait_s)
+        combined = (r.stderr or "") + (r.stdout or "")
+        if "non-fast-forward" in combined or "! [rejected]" in combined:
+            rebase_attempts += 1
+            if rebase_attempts > max_rebase:
+                raise RuntimeError(
+                    "git push still non-fast-forward after repeated pull --rebase; resolve conflicts manually."
+                ) from None
+            print("Remote main is ahead; running git pull --rebase origin main ...")
+            rb = subprocess.run(
+                ["git", "pull", "--rebase", "origin", "main"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            if rb.returncode != 0:
+                raise RuntimeError(
+                    "git pull --rebase failed (conflict or network). Fix locally, then re-run.\n"
+                    + (rb.stderr or rb.stdout or "")
+                ) from None
+            time.sleep(0.5)
+            continue
+        last_err = RuntimeError(combined.strip() or f"git push exit {r.returncode}")
+        i += 1
+        if max_retries != 0 and i >= max_retries:
+            break
+        backoff_idx = min(i - 1, 10)
+        wait_s = retry_wait * (2**backoff_idx)
+        total_text = "infinite" if max_retries == 0 else str(max_retries)
+        print(f"Push failed (attempt {i}/{total_text}), retry in {wait_s:.1f}s...")
+        time.sleep(wait_s)
     raise RuntimeError("git push failed after retries") from last_err
 
 
