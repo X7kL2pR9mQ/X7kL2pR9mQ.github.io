@@ -18,10 +18,16 @@ STATE_FILE = REPO_ROOT / ".upload_state.json"
 GOLDEN_PATH = PROJECT_ROOT / "golden_set_0401.json"
 
 DATASETS = {
-    "skyreels": {
-        "label": "SkyReels V3",
+    "skyreels_multi": {
+        "label": "SkyReels V3 多图R2V",
+        "source_dir": PROJECT_ROOT / "skyreels_golden" / "videos_3ref_step8_5s_guide2_0331prompt",
+        "asset_dir": REPO_ROOT / "assets" / "skyreels_multi",
+        "pattern": re.compile(r"^(M900[0-3])__prompt(\d+)__5s\.mp4$"),
+    },
+    "skyreels_single": {
+        "label": "SkyReels V3 单图R2V",
         "source_dir": PROJECT_ROOT / "skyreels_golden" / "videos_1ref_step8_5s_guide2_0401prompt",
-        "asset_dir": REPO_ROOT / "assets" / "skyreels",
+        "asset_dir": REPO_ROOT / "assets" / "skyreels_single",
         "pattern": re.compile(r"^(M900[0-3])__prompt(\d+)__5s\.mp4$"),
     },
     "veo3": {
@@ -38,6 +44,9 @@ DATASETS = {
     },
 }
 
+DATASET_KEYS: tuple[str, ...] = ("skyreels_multi", "skyreels_single", "veo3", "wan26")
+ACTIVE_DATASET_KEY = "skyreels_multi"
+
 GROUP_THEME = {
     0: {"accent": "#0d9488", "bg": "rgba(13, 148, 136, 0.08)"},
     1: {"accent": "#2563eb", "bg": "rgba(37, 99, 235, 0.08)"},
@@ -46,7 +55,7 @@ GROUP_THEME = {
 }
 
 
-DEFAULT_STATE = {"skyreels": 0, "veo3": 0, "wan26": 0}
+DEFAULT_STATE = {"skyreels_multi": 0, "skyreels_single": 0, "veo3": 0, "wan26": 0}
 
 
 def load_state() -> dict[str, int]:
@@ -57,6 +66,10 @@ def load_state() -> dict[str, int]:
         if not raw:
             return dict(DEFAULT_STATE)
         data = json.loads(raw)
+        if "skyreels" in data and "skyreels_multi" not in data:
+            data["skyreels_multi"] = data["skyreels"]
+        if "skyreels_single" not in data:
+            data["skyreels_single"] = 0
         return {k: int(data.get(k, 0)) for k in DEFAULT_STATE}
     except Exception:
         return dict(DEFAULT_STATE)
@@ -158,8 +171,10 @@ def group_by_id(items: list[tuple[str, int, str]]) -> dict[int, list[tuple[int, 
     return grouped
 
 
-def build_dataset_section(dataset_key: str, label: str, grouped: dict[int, list[tuple[int, str]]], golden: dict[str, str]) -> str:
-    active_cls = " is-active" if dataset_key == "skyreels" else ""
+def build_dataset_section(
+    dataset_key: str, label: str, grouped: dict[int, list[tuple[int, str]]], golden: dict[str, str], *, is_active: bool
+) -> str:
+    active_cls = " is-active" if is_active else ""
     parts = [f'<section class="dataset{active_cls}" data-dataset="{dataset_key}">']
     parts.append('<nav class="toc" aria-label="分组跳转">')
     for gid in range(4):
@@ -195,16 +210,23 @@ def write_index(
     golden: dict[str, str],
 ) -> None:
     html_out = [HTML_HEAD]
+    opts = []
+    for key in DATASET_KEYS:
+        lab = html.escape(DATASETS[key]["label"])
+        sel = " selected" if key == ACTIVE_DATASET_KEY else ""
+        opts.append(f'<option value="{html.escape(key)}"{sel}>{lab}</option>')
     html_out.append(
         '<div class="source-switch"><label for="sourceSelect">数据源</label>'
         '<select id="sourceSelect" aria-label="选择数据源">'
-        '<option value="skyreels" selected>SkyReels V3</option>'
-        '<option value="veo3">veo3-1fast</option>'
-        '<option value="wan26">Wan 2.6</option>'
-        "</select></div>"
+        + "".join(opts)
+        + "</select></div>"
     )
-    for key in ("skyreels", "veo3", "wan26"):
-        html_out.append(build_dataset_section(key, DATASETS[key]["label"], grouped[key], golden))
+    for key in DATASET_KEYS:
+        html_out.append(
+            build_dataset_section(
+                key, DATASETS[key]["label"], grouped[key], golden, is_active=(key == ACTIVE_DATASET_KEY)
+            )
+        )
     html_out.append(HTML_TAIL)
     (REPO_ROOT / "index.html").write_text("".join(html_out), encoding="utf-8")
 
@@ -290,11 +312,7 @@ def main() -> None:
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
 
     if args.regenerate_index:
-        grouped = {
-            "skyreels": group_by_id(collect_asset_items("skyreels")),
-            "veo3": group_by_id(collect_asset_items("veo3")),
-            "wan26": group_by_id(collect_asset_items("wan26")),
-        }
+        grouped = {key: group_by_id(collect_asset_items(key)) for key in DATASET_KEYS}
         write_index(grouped, golden)
         print("Wrote index.html only.")
         return
@@ -306,15 +324,20 @@ def main() -> None:
         round_idx += 1
         run_git("fetch", "origin", "main")
         remote_assets = get_remote_asset_set()
-        sky_all = list_videos("skyreels")
+        sky_m_all = list_videos("skyreels_multi")
+        sky_s_all = list_videos("skyreels_single")
         veo_all = list_videos("veo3")
         wan_all = list_videos("wan26")
-        sky_batch, next_sky = pick_batch(sky_all, state["skyreels"], args.batch_size)
+        sky_m_batch, next_sky_m = pick_batch(sky_m_all, state["skyreels_multi"], args.batch_size)
+        sky_s_batch, next_sky_s = pick_batch(sky_s_all, state["skyreels_single"], args.batch_size)
         veo_batch, next_veo = pick_batch(veo_all, state["veo3"], args.batch_size)
         wan_batch, next_wan = pick_batch(wan_all, state["wan26"], args.batch_size)
 
-        sky_added, sky_skipped = append_assets(
-            "skyreels", sky_batch, remote_assets, ignore_remote_skip=args.ignore_remote_skip
+        sky_m_added, sky_m_skipped = append_assets(
+            "skyreels_multi", sky_m_batch, remote_assets, ignore_remote_skip=args.ignore_remote_skip
+        )
+        sky_s_added, sky_s_skipped = append_assets(
+            "skyreels_single", sky_s_batch, remote_assets, ignore_remote_skip=args.ignore_remote_skip
         )
         veo_added, veo_skipped = append_assets(
             "veo3", veo_batch, remote_assets, ignore_remote_skip=args.ignore_remote_skip
@@ -322,30 +345,39 @@ def main() -> None:
         wan_added, wan_skipped = append_assets(
             "wan26", wan_batch, remote_assets, ignore_remote_skip=args.ignore_remote_skip
         )
-        state = {"skyreels": next_sky, "veo3": next_veo, "wan26": next_wan}
-
-        grouped = {
-            "skyreels": group_by_id(collect_asset_items("skyreels")),
-            "veo3": group_by_id(collect_asset_items("veo3")),
-            "wan26": group_by_id(collect_asset_items("wan26")),
+        state = {
+            "skyreels_multi": next_sky_m,
+            "skyreels_single": next_sky_s,
+            "veo3": next_veo,
+            "wan26": next_wan,
         }
+
+        grouped = {key: group_by_id(collect_asset_items(key)) for key in DATASET_KEYS}
         write_index(grouped, golden)
 
         print(
-            f"[Round {round_idx}] added skyreels={sky_added}, veo3={veo_added}, wan26={wan_added}; "
-            f"skipped(remote) skyreels={sky_skipped}, veo3={veo_skipped}, wan26={wan_skipped}"
+            f"[Round {round_idx}] added sky_multi={sky_m_added}, sky_single={sky_s_added}, "
+            f"veo3={veo_added}, wan26={wan_added}; "
+            f"skipped(remote) sky_multi={sky_m_skipped}, sky_single={sky_s_skipped}, "
+            f"veo3={veo_skipped}, wan26={wan_skipped}"
         )
         print(
-            f"[Round {round_idx}] progress skyreels={next_sky}/{len(sky_all)}, "
+            f"[Round {round_idx}] progress sky_multi={next_sky_m}/{len(sky_m_all)}, "
+            f"sky_single={next_sky_s}/{len(sky_s_all)}, "
             f"veo3={next_veo}/{len(veo_all)}, wan26={next_wan}/{len(wan_all)}"
         )
 
-        changed = sky_added > 0 or veo_added > 0 or wan_added > 0
+        changed = sky_m_added > 0 or sky_s_added > 0 or veo_added > 0 or wan_added > 0
         if args.commit or args.push:
             save_state(state)
-            run_git("add", "index.html", "assets", ".upload_state.json", "rotate_publish.py")
+            run_git("add", "index.html", ".upload_state.json", "rotate_publish.py")
+            for key in DATASET_KEYS:
+                run_git("add", DATASETS[key]["asset_dir"].relative_to(REPO_ROOT).as_posix())
             if changed:
-                msg = f"Upload batch: skyreels+{sky_added}, veo3+{veo_added}, wan26+{wan_added}"
+                msg = (
+                    f"Upload batch: sky_multi+{sky_m_added}, sky_single+{sky_s_added}, "
+                    f"veo3+{veo_added}, wan26+{wan_added}"
+                )
                 run_git("commit", "-m", msg)
                 print("Committed.")
             else:
@@ -358,7 +390,8 @@ def main() -> None:
             print("Pushed.")
 
         done = (
-            next_sky >= len(sky_all)
+            next_sky_m >= len(sky_m_all)
+            and next_sky_s >= len(sky_s_all)
             and next_veo >= len(veo_all)
             and next_wan >= len(wan_all)
         )
