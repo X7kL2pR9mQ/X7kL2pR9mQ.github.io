@@ -175,7 +175,9 @@ def build_dataset_section(dataset_key: str, label: str, grouped: dict[int, list[
         for pid, rel in grouped[gid]:
             prompt = html.escape(golden.get(str(pid), "（golden_set.json 中无此 id）"))
             parts.append('<article class="card">')
-            parts.append(f'<div class="video-wrap"><video controls preload="metadata" playsinline src="{html.escape(rel)}"></video></div>')
+            parts.append(
+                f'<div class="video-wrap"><video controls preload="none" playsinline data-src="{html.escape(rel)}"></video></div>'
+            )
             parts.append(f'<div class="meta"><span class="badge">prompt {pid}</span><p class="prompt">{prompt}</p></div>')
             parts.append("</article>")
         parts.append("</div></section>")
@@ -234,12 +236,28 @@ def main() -> None:
     parser.add_argument("--max-retries", type=int, default=0, help="Max git push retries; 0 means infinite.")
     parser.add_argument("--retry-wait", type=float, default=2.0, help="Initial seconds between retries.")
     parser.add_argument("--until-done", action="store_true", help="Keep batching until all videos are uploaded.")
+    parser.add_argument(
+        "--regenerate-index",
+        action="store_true",
+        help="Only rewrite index.html from current assets (no upload state change).",
+    )
     args = parser.parse_args()
 
     if args.batch_size <= 0 or args.max_retries < 0 or args.retry_wait <= 0:
         raise SystemExit("batch-size>0, max-retries>=0, retry-wait>0")
 
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
+
+    if args.regenerate_index:
+        grouped = {
+            "skyreels": group_by_id(collect_asset_items("skyreels")),
+            "veo3": group_by_id(collect_asset_items("veo3")),
+            "wan26": group_by_id(collect_asset_items("wan26")),
+        }
+        write_index(grouped, golden)
+        print("Wrote index.html only.")
+        return
+
     state = load_state()
 
     round_idx = 0
@@ -336,14 +354,38 @@ HTML_HEAD = """<!DOCTYPE html>
 HTML_TAIL = """
   </div>
   <script>
-    const select = document.getElementById("sourceSelect");
-    const datasets = document.querySelectorAll(".dataset");
-    function switchDataset(key) {
-      datasets.forEach((el) => el.classList.toggle("is-active", el.dataset.dataset === key));
-      location.hash = "";
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
-    select.addEventListener("change", (e) => switchDataset(e.target.value));
+    (function () {
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            const v = e.target;
+            const url = v.getAttribute("data-src");
+            if (url && !v.getAttribute("src")) {
+              v.src = url;
+              v.removeAttribute("data-src");
+              io.unobserve(v);
+            }
+          }
+        },
+        { root: null, rootMargin: "320px", threshold: 0.01 }
+      );
+      function observeActiveDatasetVideos() {
+        const active = document.querySelector(".dataset.is-active");
+        if (!active) return;
+        active.querySelectorAll("video[data-src]").forEach((v) => io.observe(v));
+      }
+      const select = document.getElementById("sourceSelect");
+      const datasets = document.querySelectorAll(".dataset");
+      function switchDataset(key) {
+        datasets.forEach((el) => el.classList.toggle("is-active", el.dataset.dataset === key));
+        location.hash = "";
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        requestAnimationFrame(() => observeActiveDatasetVideos());
+      }
+      select.addEventListener("change", (e) => switchDataset(e.target.value));
+      observeActiveDatasetVideos();
+    })();
   </script>
 </body>
 </html>
